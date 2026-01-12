@@ -1,0 +1,252 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Discipline Stock Monitoring Rule Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ticker",
+    "strategy_type",
+    "indicator_policy",
+    "indicators",
+    "position_intent",
+    "position_sizing",
+    "entry_rules",
+    "exit_rules",
+    "risk_rules",
+    "behavior_controls"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "ticker": { "type": "string", "minLength": 1 },
+    "strategy_type": { "type": "string", "enum": ["swing", "long-term", "position"] },
+    "indicator_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeframe", "price_field", "use_eod_only"],
+      "properties": {
+        "timeframe": { "type": "string", "enum": ["1D"] },
+        "price_field": { "type": "string", "enum": ["close", "adjusted_close"] },
+        "use_eod_only": { "type": "boolean" }
+      }
+    },
+    "indicators": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/indicator" }
+    },
+    "position_intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_holding_days", "cooldown_days_after_exit"],
+      "properties": {
+        "max_holding_days": { "type": "integer", "minimum": 1 },
+        "cooldown_days_after_exit": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "position_sizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_pct", "max_pct", "account_size"],
+      "properties": {
+        "target_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "account_size": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "entry_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/entry_rule" }
+    },
+    "exit_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hard_stop": { "$ref": "#/definitions/hard_stop" },
+        "take_profits": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/take_profit" }
+        },
+        "trailing_stop": { "$ref": "#/definitions/trailing_stop" },
+        "time_stop": { "$ref": "#/definitions/time_stop" },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/exit_condition" }
+        }
+      },
+      "anyOf": [
+        { "required": ["hard_stop"] },
+        { "required": ["take_profits"] },
+        { "required": ["trailing_stop"] },
+        { "required": ["time_stop"] },
+        { "required": ["conditions"] }
+      ]
+    },
+    "risk_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_loss_per_position_pct",
+        "max_loss_per_day_pct",
+        "max_loss_per_week_pct",
+        "max_concurrent_positions",
+        "earnings_window_block_days"
+      ],
+      "properties": {
+        "max_loss_per_position_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_loss_per_day_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_loss_per_week_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_concurrent_positions": { "type": "integer", "minimum": 1 },
+        "earnings_window_block_days": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "behavior_controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmation_delay_sec", "require_override_reason", "daily_action_limit"],
+      "properties": {
+        "confirmation_delay_sec": { "type": "integer", "minimum": 0 },
+        "require_override_reason": { "type": "boolean" },
+        "daily_action_limit": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "indicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["MA"] },
+        "ma_type": { "type": "string", "enum": ["SMA"] },
+        "period": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "entry_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "size_pct", "condition"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "size_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "condition": { "$ref": "#/definitions/condition" },
+        "constraints": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/condition" }
+        }
+      }
+    },
+    "exit_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "condition"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "condition": { "$ref": "#/definitions/condition" }
+      }
+    },
+    "hard_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "type": "string", "enum": ["pct_below_entry"] },
+        "value": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "take_profit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pct_gain", "size_pct"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "pct_gain": { "type": "number", "minimum": 0 },
+        "size_pct": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "trailing_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "type": "string", "enum": ["pct_from_peak"] },
+        "value": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "time_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_holding_days"],
+      "properties": {
+        "max_holding_days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "condition": {
+      "oneOf": [
+        { "$ref": "#/definitions/simple_condition" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["all"],
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/condition" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["any"],
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/condition" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["not"],
+          "properties": {
+            "not": { "$ref": "#/definitions/condition" }
+          }
+        }
+      ]
+    },
+    "simple_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "left", "right"],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": ["gt", "gte", "lt", "lte", "eq", "crosses_above", "crosses_below"]
+        },
+        "left": { "$ref": "#/definitions/operand" },
+        "right": { "$ref": "#/definitions/operand" }
+      }
+    },
+    "operand": {
+      "oneOf": [
+        { "type": "number" },
+        {
+          "type": "string",
+          "pattern": "^(price\\.(open|high|low|close)|ind\\.[A-Za-z0-9_]+|pos\\.(avg_entry|days_held)|risk\\.[A-Za-z0-9_]+)$"
+        }
+      ]
+    }
+  }
+}
