@@ -20,6 +20,7 @@
     "schema_version": { "type": "string" },
     "ticker": { "type": "string", "minLength": 1 },
     "strategy_type": { "type": "string", "enum": ["swing", "long-term", "position"] },
+    "rule_language": { "type": "string", "enum": ["expression-v1"] },
     "indicator_policy": {
       "type": "object",
       "additionalProperties": false,
@@ -86,19 +87,41 @@
     "risk_rules": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "max_loss_per_position_pct",
-        "max_loss_per_day_pct",
-        "max_loss_per_week_pct",
-        "max_concurrent_positions",
-        "earnings_window_block_days"
-      ],
+      "required": ["account", "strategy", "ticker"],
       "properties": {
-        "max_loss_per_position_pct": { "type": "number", "minimum": 0, "maximum": 1 },
-        "max_loss_per_day_pct": { "type": "number", "minimum": 0, "maximum": 1 },
-        "max_loss_per_week_pct": { "type": "number", "minimum": 0, "maximum": 1 },
-        "max_concurrent_positions": { "type": "integer", "minimum": 1 },
-        "earnings_window_block_days": { "type": "integer", "minimum": 0 }
+        "account": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_drawdown", "daily_loss_limit", "max_position_value"],
+          "properties": {
+            "max_drawdown": { "type": "number", "minimum": 0, "maximum": 1 },
+            "daily_loss_limit": { "type": "number", "minimum": 0, "maximum": 1 },
+            "max_position_value": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "strategy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_allocation", "max_concurrent_trades", "strategy_max_drawdown"],
+          "properties": {
+            "max_allocation": { "type": "number", "minimum": 0, "maximum": 1 },
+            "max_concurrent_trades": { "type": "integer", "minimum": 1 },
+            "strategy_max_drawdown": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "ticker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_position_pct", "max_loss_per_ticker", "blacklist"],
+          "properties": {
+            "max_position_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+            "max_loss_per_ticker": { "type": "number", "minimum": 0, "maximum": 1 },
+            "blacklist": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
       }
     },
     "behavior_controls": {
@@ -118,40 +141,82 @@
   },
   "definitions": {
     "indicator": {
+      "oneOf": [
+        { "$ref": "#/definitions/ma_indicator" },
+        { "$ref": "#/definitions/rsi_indicator" },
+        { "$ref": "#/definitions/vwap_indicator" }
+      ]
+    },
+    "ma_indicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "ma_type", "period"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["MA"] },
+        "ma_type": { "type": "string", "enum": ["SMA", "EMA"] },
+        "period": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rsi_indicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "period"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "enum": ["RSI"] },
+        "period": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "vwap_indicator": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "type"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "type": "string", "enum": ["MA"] },
-        "ma_type": { "type": "string", "enum": ["SMA"] },
+        "type": { "type": "string", "enum": ["VWAP"] },
         "period": { "type": "integer", "minimum": 1 }
       }
     },
     "entry_rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "size_pct", "condition"],
+      "required": ["id", "priority", "size_pct"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "label": { "type": "string" },
+        "priority": { "type": "integer", "minimum": 1 },
         "size_pct": { "type": "number", "minimum": 0, "maximum": 1 },
         "condition": { "$ref": "#/definitions/condition" },
+        "condition_expr": { "$ref": "#/definitions/condition_expr" },
         "constraints": {
           "type": "array",
           "items": { "$ref": "#/definitions/condition" }
+        },
+        "constraints_expr": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/condition_expr" }
         }
-      }
+      },
+      "oneOf": [
+        { "required": ["condition"] },
+        { "required": ["condition_expr"] }
+      ]
     },
     "exit_condition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "condition"],
+      "required": ["id"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "label": { "type": "string" },
-        "condition": { "$ref": "#/definitions/condition" }
-      }
+        "condition": { "$ref": "#/definitions/condition" },
+        "condition_expr": { "$ref": "#/definitions/condition_expr" }
+      },
+      "oneOf": [
+        { "required": ["condition"] },
+        { "required": ["condition_expr"] }
+      ]
     },
     "hard_stop": {
       "type": "object",
@@ -226,6 +291,10 @@
         }
       ]
     },
+    "condition_expr": {
+      "type": "string",
+      "minLength": 1
+    },
     "simple_condition": {
       "type": "object",
       "additionalProperties": false,
@@ -233,7 +302,20 @@
       "properties": {
         "op": {
           "type": "string",
-          "enum": ["gt", "gte", "lt", "lte", "eq", "crosses_above", "crosses_below"]
+          "enum": [
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "eq",
+            "ne",
+            "above",
+            "below",
+            "crosses_above",
+            "crosses_below",
+            "crossover",
+            "crossunder"
+          ]
         },
         "left": { "$ref": "#/definitions/operand" },
         "right": { "$ref": "#/definitions/operand" }
@@ -244,7 +326,7 @@
         { "type": "number" },
         {
           "type": "string",
-          "pattern": "^(price\\.(open|high|low|close)|ind\\.[A-Za-z0-9_]+|pos\\.(avg_entry|days_held)|risk\\.[A-Za-z0-9_]+)$"
+          "pattern": "^(price\\.(open|high|low|close|adjusted_close)|volume|ind\\.[A-Za-z0-9_]+|pos\\.(avg_entry|days_held)|risk\\.(account|strategy|ticker)\\.[A-Za-z0-9_]+)$"
         }
       ]
     }

@@ -47,6 +47,10 @@ function buildStateKey(decision, action, triggeredIds, reasons):
   return `${decision}_${action}_${idsPart}_${hash}`
 ```
 
+## Decision resolution rules
+- If multiple entry rules trigger, allow only the highest-priority entry rule.
+- If both BUY and SELL are triggered in the same evaluation, emit BLOCK with reason code CONFLICT_BUY_SELL.
+
 ## Notes
 - If multiple rules trigger (e.g., TP1 and TP2), include both IDs.
 - If decision is BLOCK, include the block reason codes in reasons.

@@ -1,0 +1,5 @@
+pytest==8.3.3
+httpx==0.27.2
+h2==4.1.0
+hyperframe==6.0.1
+hpack==4.0.0
