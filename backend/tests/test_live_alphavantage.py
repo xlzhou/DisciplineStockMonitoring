@@ -1,15 +1,18 @@
 import os
 import pytest
 
-from app.market_data import AlphaVantageClient
+from app.config import load_env
+from app.market_data import TwelveDataClient
+
+load_env()
 
 
 @pytest.mark.skipif(
-    not os.getenv("ALPHAVANTAGE_API_KEY"),
-    reason="ALPHAVANTAGE_API_KEY not set",
+    not os.getenv("TWELVEDATA_API_KEY"),
+    reason="TWELVEDATA_API_KEY not set",
 )
-def test_live_alphavantage_smoke():
-    client = AlphaVantageClient()
+def test_live_twelvedata_smoke():
+    client = TwelveDataClient()
     bars = client.fetch_daily_bars("AAPL")
     assert bars
     price = client.fetch_intraday_price("AAPL")

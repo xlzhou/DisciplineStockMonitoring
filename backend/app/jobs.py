@@ -3,10 +3,10 @@ import json
 from sqlalchemy.orm import Session
 
 from . import crud, indicator_engine, ingestion, models, notifications, rule_engine
-from .market_data import AlphaVantageClient
+from .market_data import TwelveDataClient
 
 
-def ingest_daily_bars(db: Session, stock: models.Stock, client: AlphaVantageClient):
+def ingest_daily_bars(db: Session, stock: models.Stock, client: TwelveDataClient):
     bars = client.fetch_daily_bars(stock.ticker)
     payload = [
         {
@@ -97,7 +97,7 @@ def evaluate_rules(
     return decision_payload, changed
 
 
-def market_monitor(db: Session, stock: models.Stock, client: AlphaVantageClient, position_state: str):
+def market_monitor(db: Session, stock: models.Stock, client: TwelveDataClient, position_state: str):
     price = client.fetch_intraday_price(stock.ticker)
     ingestion.record_audit(
         db,

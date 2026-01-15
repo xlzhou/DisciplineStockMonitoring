@@ -15,9 +15,9 @@ python3 -m pytest -q
 ALPHAVANTAGE_API_KEY= python3 -m pytest -q
 ```
 
-## Run live Alpha Vantage smoke test
+## Run live Twelve Data smoke test
 ```
-export ALPHAVANTAGE_API_KEY=YOUR_KEY
+export TWELVEDATA_API_KEY=YOUR_KEY
 python3 -m pytest -q backend/tests/test_live_alphavantage.py
 ```
 

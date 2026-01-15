@@ -30,6 +30,16 @@ class StockOut(StockBase):
     model_config = {"from_attributes": True}
 
 
+class StockPriceOut(StockOut):
+    price: float | None = None
+
+
+class StockPriceOnly(BaseModel):
+    id: int
+    ticker: str
+    price: float | None
+
+
 class RulePlanBase(BaseModel):
     version: int
     is_active: bool = True

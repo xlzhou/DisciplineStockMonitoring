@@ -8,7 +8,7 @@ from apscheduler.triggers.cron import CronTrigger
 from .db import SessionLocal
 from .jobs import ingest_daily_bars, market_monitor, update_indicators
 from .market_calendar import load_holidays
-from .market_data import AlphaVantageClient
+from .market_data import TwelveDataClient
 from .models import Stock
 
 
@@ -46,10 +46,12 @@ def run_market_monitor():
     now = datetime.now(_market_timezone())
     if not is_trading_day(now):
         return
-    client = AlphaVantageClient()
+    client = TwelveDataClient()
     with SessionLocal() as db:
         stocks = db.query(Stock).filter(Stock.status == "active").all()
         for stock in stocks:
+            if stock.market.upper() != "US":
+                continue
             market_monitor(db, stock, client, position_state=stock.position_state)
 
 
@@ -57,10 +59,12 @@ def run_daily_job():
     now = datetime.now(_market_timezone())
     if not is_trading_day(now):
         return
-    client = AlphaVantageClient()
+    client = TwelveDataClient()
     with SessionLocal() as db:
         stocks = db.query(Stock).filter(Stock.status == "active").all()
         for stock in stocks:
+            if stock.market.upper() != "US":
+                continue
             ingest_daily_bars(db, stock, client)
             update_indicators(db, stock)
             market_monitor(db, stock, client, position_state=stock.position_state)

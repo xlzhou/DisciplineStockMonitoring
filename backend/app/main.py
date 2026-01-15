@@ -1,8 +1,9 @@
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import crud, jobs, models, schemas, validation
+from .market_data import TwelveDataClient, get_cached_price, set_cached_price
 from .config import load_env
 from .db import Base, engine, get_db
 
@@ -24,6 +25,93 @@ def create_stock(stock_in: schemas.StockCreate, db: Session = Depends(get_db)):
 @app.get("/stocks", response_model=list[schemas.StockOut])
 def list_stocks(db: Session = Depends(get_db)):
     return crud.list_stocks(db)
+
+
+@app.get("/stocks/with-prices", response_model=list[schemas.StockPriceOut])
+def list_stocks_with_prices(db: Session = Depends(get_db)):
+    client = TwelveDataClient()
+    stocks = crud.list_stocks(db)
+    results: list[schemas.StockPriceOut] = []
+    for stock in stocks:
+        price = None
+        try:
+            if stock.status != "archived" and stock.market.upper() == "US":
+                price = client.fetch_intraday_price_cached(stock.ticker)
+        except Exception:
+            price = None
+        results.append(
+            schemas.StockPriceOut(
+                id=stock.id,
+                ticker=stock.ticker,
+                market=stock.market,
+                currency=stock.currency,
+                status=stock.status,
+                position_state=stock.position_state,
+                created_at=stock.created_at,
+                price=price,
+            )
+        )
+    return results
+
+
+@app.get("/stocks/prices", response_model=list[schemas.StockPriceOnly])
+def list_stock_prices(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    client = TwelveDataClient()
+    stocks = crud.list_stocks(db)
+    results: list[schemas.StockPriceOnly] = []
+    to_fetch: list[str] = []
+
+    for stock in stocks:
+        price = None
+        if stock.status != "archived" and stock.market.upper() == "US":
+            cached = get_cached_price(stock.ticker, ttl_seconds=60)
+            if cached is not None:
+                price = cached
+            else:
+                to_fetch.append(stock.ticker)
+        results.append(schemas.StockPriceOnly(id=stock.id, ticker=stock.ticker, price=price))
+
+    if to_fetch:
+        background_tasks.add_task(_refresh_prices, to_fetch, client)
+
+    return results
+
+
+def _refresh_prices(symbols: list[str], client: TwelveDataClient):
+    for symbol in symbols:
+        try:
+            price = client.fetch_intraday_price(symbol)
+            set_cached_price(symbol, price)
+        except Exception:
+            continue
+
+
+@app.get("/debug/price/{ticker}")
+def debug_price(ticker: str):
+    client = TwelveDataClient()
+    try:
+        price = client.fetch_intraday_price(ticker)
+        return {"ticker": ticker.upper(), "price": price}
+    except Exception as exc:
+        return {"ticker": ticker.upper(), "error": str(exc)}
+
+
+@app.get("/stocks/validate/{ticker}")
+def validate_ticker(ticker: str, market: str = "US"):
+    if market.upper() != "US":
+        return {"ticker": ticker.upper(), "valid": True}
+
+    client = TwelveDataClient()
+    try:
+        price = client.fetch_intraday_price_cached(ticker)
+    except Exception as exc:
+        message = str(exc).lower()
+        if "rate limit" in message or "limit" in message:
+            return {"ticker": ticker.upper(), "valid": True, "status": "unverified"}
+        if "symbol" in message and "not" in message:
+            return {"ticker": ticker.upper(), "valid": False, "status": "invalid"}
+        return {"ticker": ticker.upper(), "valid": True, "status": "unverified"}
+    return {"ticker": ticker.upper(), "valid": price > 0}
 
 
 @app.get("/stocks/{stock_id}", response_model=schemas.StockOut)
