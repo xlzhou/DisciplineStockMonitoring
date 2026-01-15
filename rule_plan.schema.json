@@ -116,6 +116,7 @@
           "properties": {
             "max_position_pct": { "type": "number", "minimum": 0, "maximum": 1 },
             "max_loss_per_ticker": { "type": "number", "minimum": 0, "maximum": 1 },
+            "earnings_window_block_days": { "type": "integer", "minimum": 0 },
             "blacklist": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 }

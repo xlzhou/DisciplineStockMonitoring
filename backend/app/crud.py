@@ -14,6 +14,16 @@ def list_stocks(db: Session):
 
 
 def create_stock(db: Session, stock_in: schemas.StockCreate):
+    existing = db.query(models.Stock).filter(models.Stock.ticker == stock_in.ticker).first()
+    if existing:
+        data = stock_in.model_dump()
+        for key, value in data.items():
+            setattr(existing, key, value)
+        existing.status = "active"
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     stock = models.Stock(**stock_in.model_dump())
     db.add(stock)
     db.commit()
@@ -23,6 +33,10 @@ def create_stock(db: Session, stock_in: schemas.StockCreate):
 
 def update_stock(db: Session, stock: models.Stock, stock_in: schemas.StockUpdate):
     data = stock_in.model_dump(exclude_unset=True)
+    if "position_qty" in data:
+        qty = data.get("position_qty")
+        if qty is not None:
+            data["position_state"] = "holding" if qty > 0 else "flat"
     for key, value in data.items():
         setattr(stock, key, value)
     db.commit()

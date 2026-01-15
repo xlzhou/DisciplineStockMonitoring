@@ -16,6 +16,8 @@ struct PortfolioStock: Identifiable {
     let positionState: String
     let ruleCompleteness: String
     let price: Double?
+    let avgEntryPrice: Double?
+    let positionQty: Int?
 }
 
 struct AllowedAction: Identifiable {

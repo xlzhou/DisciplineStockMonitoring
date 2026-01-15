@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from . import crud, jobs, models, schemas, validation
 from .market_data import TwelveDataClient, get_cached_price, set_cached_price
 from .config import load_env
-from .db import Base, engine, get_db
+from .db import Base, engine, get_db, ensure_stock_columns
 
 load_env()
 Base.metadata.create_all(bind=engine)
+ensure_stock_columns()
 
 app = FastAPI(title="Discipline Stock Monitoring API")
 
@@ -19,6 +20,17 @@ def create_stock(stock_in: schemas.StockCreate, db: Session = Depends(get_db)):
         return crud.create_stock(db, stock_in)
     except IntegrityError:
         db.rollback()
+        existing = (
+            db.query(models.Stock).filter(models.Stock.ticker == stock_in.ticker).first()
+        )
+        if existing:
+            data = stock_in.model_dump()
+            for key, value in data.items():
+                setattr(existing, key, value)
+            existing.status = "active"
+            db.commit()
+            db.refresh(existing)
+            return existing
         raise HTTPException(status_code=409, detail="Ticker already exists")
 
 
@@ -152,6 +164,33 @@ def create_rule_plan(stock_id: int, plan_in: schemas.RulePlanCreate, db: Session
     errors = validation.validate_rule_plan(plan_in.rules)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
+
+    try:
+        plan = crud.create_rule_plan(db, stock, plan_in)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Version already exists for this stock")
+
+    return crud.serialize_rule_plan(plan)
+
+
+@app.post(
+    "/stocks/{stock_id}/rule-plans/raw",
+    response_model=schemas.RulePlanOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_rule_plan_raw(stock_id: int, rules: dict, db: Session = Depends(get_db)):
+    stock = crud.get_stock(db, stock_id)
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
+
+    errors = validation.validate_rule_plan(rules)
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
+
+    plans = crud.list_rule_plans(db, stock_id)
+    latest_version = max((plan.version for plan in plans), default=0)
+    plan_in = schemas.RulePlanCreate(version=latest_version + 1, is_active=True, rules=rules)
 
     try:
         plan = crud.create_rule_plan(db, stock, plan_in)

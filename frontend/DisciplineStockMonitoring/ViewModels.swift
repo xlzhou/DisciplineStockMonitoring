@@ -8,6 +8,9 @@ final class StatusViewModel: ObservableObject {
     @Published private(set) var statuses: [StockStatus] = []
 
     private let apiClient: APIClient
+    private var priceRefreshTask: Task<Void, Never>?
+    private var isRefreshingPrices = false
+    private var lastPriceFetch: Date?
 
     init(apiClient: APIClient? = nil) {
         self.apiClient = apiClient ?? APIClient(baseURL: AppConfig.apiBaseURL)
@@ -33,12 +36,20 @@ final class StatusViewModel: ObservableObject {
             errorMessage = "Failed to load status: \(error.localizedDescription)"
         }
         isLoading = false
-        Task {
-            await refreshPrices(retries: 2, delaySeconds: 4)
+        priceRefreshTask?.cancel()
+        priceRefreshTask = Task {
+            await refreshPrices(retries: 1, delaySeconds: 4)
         }
     }
 
     func refreshPrices(retries: Int, delaySeconds: UInt64) async {
+        guard !isRefreshingPrices else { return }
+        let now = Date()
+        if let last = lastPriceFetch, now.timeIntervalSince(last) < 5 {
+            return
+        }
+        lastPriceFetch = now
+        isRefreshingPrices = true
         do {
             let prices = try await apiClient.fetchStockPrices()
             let lookup = Dictionary(uniqueKeysWithValues: prices.map { ($0.id, $0.price) })
@@ -54,15 +65,20 @@ final class StatusViewModel: ObservableObject {
             }
             if retries > 0 && statuses.contains(where: { $0.price == nil }) {
                 try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+                isRefreshingPrices = false
                 await refreshPrices(retries: retries - 1, delaySeconds: delaySeconds)
+                return
             }
         } catch {
             errorMessage = "Price refresh failed: \(error.localizedDescription)"
             if retries > 0 {
                 try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+                isRefreshingPrices = false
                 await refreshPrices(retries: retries - 1, delaySeconds: delaySeconds)
+                return
             }
         }
+        isRefreshingPrices = false
     }
 }
 
@@ -73,6 +89,9 @@ final class PortfolioViewModel: ObservableObject {
     @Published private(set) var stocks: [PortfolioStock] = []
 
     private let apiClient: APIClient
+    private var priceRefreshTask: Task<Void, Never>?
+    private var isRefreshingPrices = false
+    private var lastPriceFetch: Date?
 
     init(apiClient: APIClient? = nil) {
         self.apiClient = apiClient ?? APIClient(baseURL: AppConfig.apiBaseURL)
@@ -84,22 +103,43 @@ final class PortfolioViewModel: ObservableObject {
         do {
             let results = try await apiClient.fetchStocks()
             let visible = results.filter { $0.status.lowercased() != "archived" }
-            stocks = visible.map { stock in
-                PortfolioStock(
-                    id: stock.id,
-                    ticker: stock.ticker,
-                    strategy: "Unknown",
-                    positionState: stock.positionState.capitalized,
-                    ruleCompleteness: "Unknown",
-                    price: nil
+            var enriched: [PortfolioStock] = []
+            for stock in visible {
+                var strategy = "Unknown"
+                var completeness = "Incomplete"
+                do {
+                    let plans = try await apiClient.fetchRulePlans(stockId: stock.id)
+                    if let active = plans.first(where: { $0.isActive }) ?? plans.sorted(by: { $0.version > $1.version }).first {
+                        completeness = "Complete"
+                        if let strategyValue = active.rules["strategy_type"] as? String, !strategyValue.isEmpty {
+                            strategy = strategyValue.capitalized
+                        }
+                    }
+                } catch {
+                    completeness = "Unknown"
+                }
+
+                enriched.append(
+                    PortfolioStock(
+                        id: stock.id,
+                        ticker: stock.ticker,
+                        strategy: strategy,
+                        positionState: stock.positionState.capitalized,
+                        ruleCompleteness: completeness,
+                        price: nil,
+                        avgEntryPrice: stock.avgEntryPrice,
+                        positionQty: stock.positionQty
+                    )
                 )
             }
+            stocks = enriched
         } catch {
             errorMessage = "Failed to load portfolio: \(error.localizedDescription)"
         }
         isLoading = false
-        Task {
-            await refreshPrices(retries: 2, delaySeconds: 4)
+        priceRefreshTask?.cancel()
+        priceRefreshTask = Task {
+            await refreshPrices(retries: 1, delaySeconds: 4)
         }
     }
 
@@ -127,7 +167,9 @@ final class PortfolioViewModel: ObservableObject {
                 market: market,
                 currency: currency,
                 status: "active",
-                positionState: positionState
+                positionState: positionState,
+                avgEntryPrice: nil,
+                positionQty: nil
             )
             _ = try await apiClient.createStock(payload)
             await load()
@@ -153,6 +195,28 @@ final class PortfolioViewModel: ObservableObject {
         }
     }
 
+    func updatePosition(id: Int, avgEntryPrice: Double?, positionQty: Int?) async -> String? {
+        isLoading = true
+        errorMessage = nil
+        do {
+            var payload: [String: Any] = [:]
+            if let avgEntryPrice {
+                payload["avg_entry_price"] = avgEntryPrice
+            }
+            if let positionQty {
+                payload["position_qty"] = positionQty
+                payload["position_state"] = positionQty > 0 ? "holding" : "flat"
+            }
+            _ = try await apiClient.updateStock(id: id, payload: payload)
+            await load()
+            return nil
+        } catch {
+            errorMessage = "Failed to update position"
+            isLoading = false
+            return errorMessage
+        }
+    }
+
     private func normalizeTicker(_ ticker: String, market: String) -> String {
         let trimmed = ticker.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         if market.uppercased() == "HK" {
@@ -165,6 +229,13 @@ final class PortfolioViewModel: ObservableObject {
     }
 
     func refreshPrices(retries: Int, delaySeconds: UInt64) async {
+        guard !isRefreshingPrices else { return }
+        let now = Date()
+        if let last = lastPriceFetch, now.timeIntervalSince(last) < 5 {
+            return
+        }
+        lastPriceFetch = now
+        isRefreshingPrices = true
         do {
             let prices = try await apiClient.fetchStockPrices()
             let lookup = Dictionary(uniqueKeysWithValues: prices.map { ($0.id, $0.price) })
@@ -175,20 +246,27 @@ final class PortfolioViewModel: ObservableObject {
                     strategy: stock.strategy,
                     positionState: stock.positionState,
                     ruleCompleteness: stock.ruleCompleteness,
-                    price: lookup[stock.id] ?? stock.price
+                    price: lookup[stock.id] ?? stock.price,
+                    avgEntryPrice: stock.avgEntryPrice,
+                    positionQty: stock.positionQty
                 )
             }
             if retries > 0 && stocks.contains(where: { $0.price == nil }) {
                 try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+                isRefreshingPrices = false
                 await refreshPrices(retries: retries - 1, delaySeconds: delaySeconds)
+                return
             }
         } catch {
             errorMessage = "Price refresh failed: \(error.localizedDescription)"
             if retries > 0 {
                 try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
+                isRefreshingPrices = false
                 await refreshPrices(retries: retries - 1, delaySeconds: delaySeconds)
+                return
             }
         }
+        isRefreshingPrices = false
     }
 }
 

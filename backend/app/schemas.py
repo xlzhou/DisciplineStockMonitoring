@@ -10,6 +10,8 @@ class StockBase(BaseModel):
     currency: str
     status: str = "active"
     position_state: str = "flat"
+    avg_entry_price: Optional[float] = None
+    position_qty: Optional[int] = None
 
 
 class StockCreate(StockBase):
@@ -21,6 +23,8 @@ class StockUpdate(BaseModel):
     currency: Optional[str] = None
     status: Optional[str] = None
     position_state: Optional[str] = None
+    avg_entry_price: Optional[float] = None
+    position_qty: Optional[int] = None
 
 
 class StockOut(StockBase):

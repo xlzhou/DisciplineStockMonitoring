@@ -25,8 +25,8 @@ struct AddStockView: View {
                         Text("HK").tag("HK")
                         Text("CN").tag("CN")
                     }
-                    .onChange(of: market) { newValue in
-                        currency = defaultCurrency(for: newValue, current: currency)
+                    .onChange(of: market) {
+                        currency = defaultCurrency(for: market, current: currency)
                     }
 
                     TextField("Currency", text: $currency)

@@ -7,6 +7,8 @@ struct StockDTO: Identifiable, Decodable {
     let currency: String
     let status: String
     let positionState: String
+    let avgEntryPrice: Double?
+    let positionQty: Int?
     let createdAt: String
 }
 
@@ -33,6 +35,8 @@ struct StockCreateRequest: Encodable {
     let currency: String
     let status: String
     let positionState: String
+    let avgEntryPrice: Double?
+    let positionQty: Int?
 }
 
 struct TickerValidationDTO: Decodable {

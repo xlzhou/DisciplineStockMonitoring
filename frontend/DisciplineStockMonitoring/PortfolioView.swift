@@ -29,6 +29,9 @@ struct PortfolioView: View {
                                         stock: stock,
                                         onArchive: { id in
                                             await viewModel.archiveStock(id: id)
+                                        },
+                                        onUpdatePosition: { id, avg, qty in
+                                            await viewModel.updatePosition(id: id, avgEntryPrice: avg, positionQty: qty)
                                         }
                                     )
                                 } label: {
@@ -38,6 +41,8 @@ struct PortfolioView: View {
                                         Text(priceText(for: stock.price))
                                             .font(.caption)
                                             .foregroundColor(.secondary)
+                                        unrealizedText(for: stock)
+                                            .font(.caption)
                                         Text("\(stock.strategy) • \(stock.positionState)")
                                             .font(.subheadline)
                                             .foregroundColor(.secondary)
@@ -79,8 +84,8 @@ struct PortfolioView: View {
                     )
                 }
             }
-            .onChange(of: showingAddStock) { isShowing in
-                if !isShowing {
+            .onChange(of: showingAddStock) {
+                if !showingAddStock {
                     Task {
                         await viewModel.load()
                     }
@@ -97,12 +102,34 @@ private func priceText(for price: Double?) -> String {
     return String(format: "Price: %.2f", price)
 }
 
+private func unrealizedText(for stock: PortfolioStock) -> Text {
+    guard let price = stock.price,
+          let avg = stock.avgEntryPrice,
+          let qty = stock.positionQty,
+          qty > 0,
+          avg > 0
+    else {
+        return Text("Unrealized: —").foregroundColor(.secondary)
+    }
+
+    let pnl = (price - avg) * Double(qty)
+    let pct = (price - avg) / avg * 100
+    let sign = pnl >= 0 ? "+" : ""
+    let text = String(format: "Unrealized: %@%.2f (%.2f%%)", sign, pnl, pct)
+    let color: Color = pnl > 0 ? .green : (pnl < 0 ? .red : .secondary)
+    return Text(text).foregroundColor(color)
+}
+
 private struct StockDetailView: View {
     let stock: PortfolioStock
     let onArchive: (Int) async -> String?
+    let onUpdatePosition: (Int, Double?, Int?) async -> String?
     @State private var isArchiving = false
     @State private var archiveError: String?
     @Environment(\.dismiss) private var dismiss
+    @State private var avgEntryInput: String = ""
+    @State private var qtyInput: String = ""
+    @State private var saveMessage: String?
 
     var body: some View {
         ScrollView {
@@ -114,8 +141,8 @@ private struct StockDetailView: View {
 
                 detailCard(title: "Position State", lines: [
                     "Status: \(stock.positionState)",
-                    "Avg Entry: 0",
-                    "Days Held: 0"
+                    "Avg Entry: \(formattedPrice(stock.avgEntryPrice))",
+                    "Quantity: \(stock.positionQty.map(String.init) ?? "—")"
                 ])
 
                 detailCard(title: "Rule Summary", lines: [
@@ -126,13 +153,48 @@ private struct StockDetailView: View {
 
                 HStack(spacing: 12) {
                     NavigationLink("Edit Rules") {
-                        RuleEditorView()
+                        RuleEditorView(stockId: stock.id, ticker: stock.ticker)
                     }
                     .buttonStyle(.borderedProminent)
 
                     Button("Audit Log") {}
                         .buttonStyle(.bordered)
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Update Position")
+                        .font(.headline)
+                    HStack(spacing: 12) {
+                        Text("Avg entry price")
+                            .frame(width: 130, alignment: .leading)
+                        TextField("e.g. 135.50", text: $avgEntryInput)
+                            .textFieldStyle(.roundedBorder)
+                            .keyboardType(.decimalPad)
+                    }
+                    HStack(spacing: 12) {
+                        Text("Quantity")
+                            .frame(width: 130, alignment: .leading)
+                        TextField("e.g. 100", text: $qtyInput)
+                            .textFieldStyle(.roundedBorder)
+                            .keyboardType(.numberPad)
+                    }
+                    if let saveMessage {
+                        Text(saveMessage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                    Button("Save Position") {
+                        Task { @MainActor in
+                            let avg = Double(avgEntryInput)
+                            let qty = Int(qtyInput)
+                            saveMessage = await onUpdatePosition(stock.id, avg, qty)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 if let archiveError {
                     Text(archiveError)
@@ -157,6 +219,14 @@ private struct StockDetailView: View {
         }
         .navigationTitle(stock.ticker)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if avgEntryInput.isEmpty, let avg = stock.avgEntryPrice {
+                avgEntryInput = String(format: "%.2f", avg)
+            }
+            if qtyInput.isEmpty, let qty = stock.positionQty {
+                qtyInput = String(qty)
+            }
+        }
     }
 
     private func detailCard(title: String, lines: [String]) -> some View {
@@ -172,6 +242,13 @@ private struct StockDetailView: View {
         .padding(16)
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func formattedPrice(_ value: Double?) -> String {
+        guard let value else {
+            return "—"
+        }
+        return String(format: "%.2f", value)
     }
 }
 

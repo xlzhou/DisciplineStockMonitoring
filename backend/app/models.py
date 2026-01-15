@@ -15,6 +15,8 @@ class Stock(Base):
     currency: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="active")
     position_state: Mapped[str] = mapped_column(String, default="flat")
+    avg_entry_price: Mapped[float] = mapped_column(nullable=True)
+    position_qty: Mapped[int] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     rule_plans = relationship("RulePlan", back_populates="stock")
